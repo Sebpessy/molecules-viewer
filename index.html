@@ -754,35 +754,40 @@ function audioFileFor(name){
   const key = Object.keys(LIB).find(k => k.toLowerCase() === name.toLowerCase());
   return key ? ("audio/" + slugify(key) + ".mp3") : null;
 }
-let announceAudio = null;
+let announceAudio = null, webSpeakTimer = null;
 function stopAnnounce(){
+  if(webSpeakTimer){ clearTimeout(webSpeakTimer); webSpeakTimer = null; }
   if(announceAudio){ try{ announceAudio.pause(); }catch(e){} announceAudio = null; }
 }
 function webSpeak(text){
   if(!("speechSynthesis" in window)) return;
   speechSynthesis.cancel();
+  duckMusic(true);  // duck immediately — Chrome's onstart event is unreliable
   const u = new SpeechSynthesisUtterance(text);
   if(chosenVoice) u.voice = chosenVoice;
-  u.rate = 0.6; u.pitch = 1.2; u.volume = 0.85;
-  u.onstart = () => duckMusic(true);
-  u.onend = () => duckMusic(false);
-  speechSynthesis.speak(u);
+  u.rate = 0.62; u.pitch = 1.18; u.volume = 1;
+  const restore = () => { if(webSpeakTimer){ clearTimeout(webSpeakTimer); webSpeakTimer = null; } duckMusic(false); };
+  u.onend = restore;
+  u.onerror = restore;
+  // safety: restore the music level even if onend never fires (a known Chrome bug)
+  webSpeakTimer = setTimeout(restore, Math.min(12000, 1800 + text.length * 130));
+  // Chrome can drop an utterance issued in the same tick as cancel() — defer slightly
+  setTimeout(() => { try{ speechSynthesis.speak(u); }catch(e){ restore(); } }, 60);
 }
 function speak(name){
   if("speechSynthesis" in window) speechSynthesis.cancel();
   stopAnnounce();
   const file = audioFileFor(name);
   if(file){
+    duckMusic(true);  // duck right away, don't wait for onplay
     announceAudio = new Audio(file);
-    announceAudio.volume = 0.95;
-    const done = () => { duckMusic(false); };
-    announceAudio.onplay = () => duckMusic(true);
-    announceAudio.onended = done;
+    announceAudio.volume = 1;
+    announceAudio.onended = () => duckMusic(false);
     announceAudio.onerror = () => { duckMusic(false); webSpeak(name); };
     announceAudio.play().catch(() => webSpeak(name));
     return;
   }
-  webSpeak(name);  // live PubChem specimens
+  webSpeak(name);  // searched / live PubChem specimens use the device voice
 }
 
 // ---- music track (uploaded audio file) ----
