@@ -707,9 +707,10 @@ function loadVoices(){
   if(!("speechSynthesis" in window)) return;
   const vs = speechSynthesis.getVoices();
   if(!vs.length) return;
-  const prefer = ["Samantha","Google UK English Female","Microsoft Zira - English (United States)",
-                  "Microsoft Zira","Victoria","Karen","Moira","Tessa","Fiona",
-                  "Google US English","Serena","Allison","Ava"];
+  const prefer = ["Ava (Premium)","Allison (Premium)","Serena (Premium)","Zoe (Premium)",
+                  "Ava","Allison","Serena","Samantha","Karen","Moira","Tessa","Fiona",
+                  "Google UK English Female","Microsoft Zira - English (United States)",
+                  "Microsoft Zira","Victoria","Google US English"];
   for(const p of prefer){
     const v = vs.find(v => v.name === p);
     if(v){ chosenVoice = v; return; }
@@ -727,9 +728,9 @@ function speak(text){
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   if(chosenVoice) u.voice = chosenVoice;
-  u.rate = 0.74;
-  u.pitch = 1.05;
-  u.volume = 1;
+  u.rate = 0.6;     // slow, drawn-out
+  u.pitch = 1.2;    // airy, ethereal
+  u.volume = 0.85;  // soft
   speechSynthesis.speak(u);
 }
 
