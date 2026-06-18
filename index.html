@@ -723,19 +723,52 @@ if("speechSynthesis" in window){
   loadVoices();
   speechSynthesis.onvoiceschanged = loadVoices;
 }
-function speak(text){
+function slugify(n){
+  return n.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
+}
+// neural-TTS audio exists only for local library specimens
+function audioFileFor(name){
+  const key = Object.keys(LIB).find(k => k.toLowerCase() === name.toLowerCase());
+  return key ? ("audio/" + slugify(key) + ".mp3") : null;
+}
+let announceAudio = null;
+function stopAnnounce(){
+  if(announceAudio){ try{ announceAudio.pause(); }catch(e){} announceAudio = null; }
+}
+function webSpeak(text){
   if(!("speechSynthesis" in window)) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   if(chosenVoice) u.voice = chosenVoice;
-  u.rate = 0.6;     // slow, drawn-out
-  u.pitch = 1.2;    // airy, ethereal
-  u.volume = 0.85;  // soft
+  u.rate = 0.6; u.pitch = 1.2; u.volume = 0.85;
+  u.onstart = () => duckMusic(true);
+  u.onend = () => duckMusic(false);
   speechSynthesis.speak(u);
+}
+function speak(name){
+  if("speechSynthesis" in window) speechSynthesis.cancel();
+  stopAnnounce();
+  const file = audioFileFor(name);
+  if(file){
+    announceAudio = new Audio(file);
+    announceAudio.volume = 0.95;
+    const done = () => { duckMusic(false); };
+    announceAudio.onplay = () => duckMusic(true);
+    announceAudio.onended = done;
+    announceAudio.onerror = () => { duckMusic(false); webSpeak(name); };
+    announceAudio.play().catch(() => webSpeak(name));
+    return;
+  }
+  webSpeak(name);  // live PubChem specimens
 }
 
 // ---- ambient music (Web Audio, synthesized) ----
-let actx = null, musicNodes = null;
+let actx = null, musicNodes = null, musicMaster = null;
+const MUSIC_VOL = 0.13, MUSIC_DUCK = 0.045;
+function duckMusic(on){
+  if(!musicMaster || !actx) return;
+  try{ musicMaster.gain.setTargetAtTime(on ? MUSIC_DUCK : MUSIC_VOL, actx.currentTime, 0.35); }catch(e){}
+}
 function startMusic(){
   if(musicNodes) return;
   if(!actx){
@@ -746,7 +779,8 @@ function startMusic(){
   if(actx.state === "suspended") actx.resume();
   const master = actx.createGain();
   master.gain.value = 0;
-  master.gain.setTargetAtTime(0.13, actx.currentTime, 2.5);
+  master.gain.setTargetAtTime(MUSIC_VOL, actx.currentTime, 2.5);
+  musicMaster = master;
   const lp = actx.createBiquadFilter();
   lp.type = "lowpass";
   lp.frequency.value = 650;
@@ -785,6 +819,7 @@ function stopMusic(){
   const toStop = musicNodes.slice(1);
   setTimeout(() => { toStop.forEach(n => { try{ n.stop(); }catch(e){} }); }, 1600);
   musicNodes = null;
+  musicMaster = null;
 }
 
 // ---- session runner ----
@@ -797,6 +832,7 @@ function stopSession(){
   plPlayBtn.classList.remove("on");
   plPlayBtn.innerHTML = "&#9654;  Play session";
   if("speechSynthesis" in window) speechSynthesis.cancel();
+  stopAnnounce();
   stopMusic();
   renderPl();
 }
