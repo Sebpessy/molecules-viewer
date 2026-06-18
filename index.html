@@ -222,6 +222,95 @@ header h1{
   border-color:var(--amber);
   color:var(--amber2);
 }
+.pl{
+  margin-top:24px;
+  padding-top:18px;
+  border-top:1px solid var(--line);
+}
+.pl-title{
+  font-family:"Fraunces", serif;
+  font-size:15px;
+  font-weight:500;
+  margin:0 0 4px;
+  color:var(--amber2);
+}
+.pl-sub{
+  color:var(--muted);
+  font-size:10px;
+  margin:0 0 12px;
+}
+.pl-list{margin-bottom:10px;}
+.pl-empty{
+  color:var(--muted);
+  font-size:11px;
+  font-style:italic;
+  margin:0 0 4px;
+}
+.pl-item{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  padding:8px 10px;
+  background:var(--bg);
+  border:1px solid var(--line);
+  border-radius:8px;
+  margin-bottom:6px;
+  font-size:12px;
+  transition:border-color .2s;
+}
+.pl-item.playing{
+  border-color:var(--amber);
+  box-shadow:0 0 0 2px rgba(232,177,94,.18);
+}
+.pl-num{
+  color:var(--amber2);
+  font-size:11px;
+  width:16px;
+  flex:none;
+}
+.pl-name{flex:1; word-break:break-word;}
+.pl-rm{
+  background:none;
+  border:none;
+  color:var(--muted);
+  cursor:pointer;
+  font-family:inherit;
+  font-size:13px;
+  padding:0 2px;
+  flex:none;
+}
+.pl-rm:hover{color:var(--amber);}
+.pl-opt{
+  display:flex;
+  flex-direction:column;
+  gap:9px;
+  margin:12px 0;
+  font-size:11px;
+  color:var(--muted);
+}
+.pl-opt label{display:flex; align-items:center; gap:8px;}
+.pl-opt input[type="number"]{
+  width:62px;
+  background:var(--bg);
+  border:1px solid var(--line);
+  color:var(--ink);
+  font-family:inherit;
+  font-size:12px;
+  padding:6px 8px;
+  border-radius:6px;
+  outline:none;
+}
+.pl-opt input[type="number"]:focus{border-color:var(--amber);}
+.pl-opt input[type="checkbox"]{accent-color:var(--amber);}
+.pl-play{
+  margin-top:4px;
+  border-color:rgba(232,177,94,.45);
+  color:var(--amber2);
+}
+.pl-play.on{
+  background:rgba(232,177,94,.14);
+  border-color:var(--amber);
+}
 @media (max-width:860px){
   .wrap{flex-direction:column;}
   .panel{
@@ -253,6 +342,21 @@ header h1{
       <button class="ctl" id="spinBtn">&#9210;  Toggle rotation</button>
       <button class="ctl" id="styleBtn">&#9881;  Cycle render style</button>
       <button class="ctl" id="centerBtn">&#9678;  Recenter</button>
+    </div>
+    <div class="pl">
+      <p class="pl-title">Meditation Playlist</p>
+      <p class="pl-sub">Display a specimen, then add it — up to 5.</p>
+      <div class="pl-list" id="plList"></div>
+      <button class="ctl" id="plAdd">&#65291;  Add current specimen</button>
+      <div class="pl-opt">
+        <label>Seconds each
+          <input type="number" id="plDur" min="3" max="180" value="20">
+        </label>
+        <label><input type="checkbox" id="plVoice" checked> Gentle voice (announce name)</label>
+        <label><input type="checkbox" id="plMusic" checked> Ambient music</label>
+        <label><input type="checkbox" id="plLoop"> Loop session</label>
+      </div>
+      <button class="ctl pl-play" id="plPlay">&#9654;  Play session</button>
     </div>
   </aside>
 </div>
@@ -359,6 +463,7 @@ function applyStyle(){
 
 function showSpecimen(spec){
   hideStatus();
+  currentSpecimenName = spec.name;
   const v = getViewer();
   v.removeAllModels();
   v.setBackgroundColor("#0a0f1a");
@@ -551,6 +656,183 @@ document.getElementById("centerBtn").addEventListener("click", () => {
   v.zoomTo();
   v.render();
 });
+
+// ---- meditation playlist ----
+let currentSpecimenName = "";
+const playlist = [];
+const MAX_PL = 5;
+const plListEl = document.getElementById("plList");
+const plDurEl = document.getElementById("plDur");
+const plVoiceEl = document.getElementById("plVoice");
+const plMusicEl = document.getElementById("plMusic");
+const plLoopEl = document.getElementById("plLoop");
+const plPlayBtn = document.getElementById("plPlay");
+const plAddBtn = document.getElementById("plAdd");
+
+function renderPl(activeIdx){
+  if(!playlist.length){
+    plListEl.innerHTML = '<p class="pl-empty">Nothing queued yet.</p>';
+    return;
+  }
+  plListEl.innerHTML = playlist.map((n,i) =>
+    '<div class="pl-item' + (i===activeIdx?' playing':'') + '">' +
+      '<span class="pl-num">' + (i+1) + '</span>' +
+      '<span class="pl-name">' + esc(n) + '</span>' +
+      '<button class="pl-rm" data-i="' + i + '" title="Remove">&#10005;</button>' +
+    '</div>').join("");
+  plListEl.querySelectorAll(".pl-rm").forEach(b => {
+    b.addEventListener("click", () => {
+      if(plState.playing) return;
+      playlist.splice(parseInt(b.dataset.i,10), 1);
+      renderPl();
+    });
+  });
+}
+
+plAddBtn.addEventListener("click", () => {
+  if(!currentSpecimenName) return;
+  if(playlist.length >= MAX_PL){
+    plAddBtn.textContent = "Playlist full (5 max)";
+    setTimeout(() => { plAddBtn.innerHTML = "&#65291;  Add current specimen"; }, 1400);
+    return;
+  }
+  if(playlist.includes(currentSpecimenName)) return;
+  playlist.push(currentSpecimenName);
+  renderPl();
+});
+
+// ---- gentle voice ----
+let chosenVoice = null;
+function loadVoices(){
+  if(!("speechSynthesis" in window)) return;
+  const vs = speechSynthesis.getVoices();
+  if(!vs.length) return;
+  const prefer = ["Samantha","Google UK English Female","Microsoft Zira - English (United States)",
+                  "Microsoft Zira","Victoria","Karen","Moira","Tessa","Fiona",
+                  "Google US English","Serena","Allison","Ava"];
+  for(const p of prefer){
+    const v = vs.find(v => v.name === p);
+    if(v){ chosenVoice = v; return; }
+  }
+  chosenVoice = vs.find(v => /en/i.test(v.lang) &&
+      /female|samantha|zira|victoria|karen|fiona|tessa|moira|serena|ava/i.test(v.name))
+    || vs.find(v => /^en/i.test(v.lang)) || vs[0];
+}
+if("speechSynthesis" in window){
+  loadVoices();
+  speechSynthesis.onvoiceschanged = loadVoices;
+}
+function speak(text){
+  if(!("speechSynthesis" in window)) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  if(chosenVoice) u.voice = chosenVoice;
+  u.rate = 0.74;
+  u.pitch = 1.05;
+  u.volume = 1;
+  speechSynthesis.speak(u);
+}
+
+// ---- ambient music (Web Audio, synthesized) ----
+let actx = null, musicNodes = null;
+function startMusic(){
+  if(musicNodes) return;
+  if(!actx){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return;
+    actx = new AC();
+  }
+  if(actx.state === "suspended") actx.resume();
+  const master = actx.createGain();
+  master.gain.value = 0;
+  master.gain.setTargetAtTime(0.13, actx.currentTime, 2.5);
+  const lp = actx.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.value = 650;
+  master.connect(lp);
+  lp.connect(actx.destination);
+  // a calm, open chord (C2-ish drone + fifth + octave + tenth)
+  const freqs = [65.41, 98.00, 130.81, 164.81, 196.00];
+  const nodes = [master];
+  freqs.forEach((f,i) => {
+    const o = actx.createOscillator();
+    o.type = "sine";
+    o.frequency.value = f;
+    o.detune.value = (i - 2) * 3;
+    const g = actx.createGain();
+    g.gain.value = 0.22;
+    // slow breathing tremolo, each voice slightly different
+    const lfo = actx.createOscillator();
+    lfo.type = "sine";
+    lfo.frequency.value = 0.05 + i * 0.018;
+    const lfoG = actx.createGain();
+    lfoG.gain.value = 0.1;
+    lfo.connect(lfoG);
+    lfoG.connect(g.gain);
+    o.connect(g);
+    g.connect(master);
+    o.start();
+    lfo.start();
+    nodes.push(o, lfo);
+  });
+  musicNodes = nodes;
+}
+function stopMusic(){
+  if(!musicNodes) return;
+  const master = musicNodes[0];
+  try{ master.gain.setTargetAtTime(0, actx.currentTime, 0.8); }catch(e){}
+  const toStop = musicNodes.slice(1);
+  setTimeout(() => { toStop.forEach(n => { try{ n.stop(); }catch(e){} }); }, 1600);
+  musicNodes = null;
+}
+
+// ---- session runner ----
+const plState = { playing:false, token:0 };
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+function stopSession(){
+  plState.playing = false;
+  plState.token++;
+  plPlayBtn.classList.remove("on");
+  plPlayBtn.innerHTML = "&#9654;  Play session";
+  if("speechSynthesis" in window) speechSynthesis.cancel();
+  stopMusic();
+  renderPl();
+}
+
+async function runSession(){
+  const myToken = plState.token;
+  do {
+    for(let i=0; i<playlist.length; i++){
+      if(myToken !== plState.token) return;
+      const name = playlist[i];
+      renderPl(i);
+      loadByName(name);
+      if(plVoiceEl.checked){
+        await sleep(700);
+        if(myToken !== plState.token) return;
+        speak(name);
+      }
+      const secs = Math.max(3, parseInt(plDurEl.value,10) || 20);
+      await sleep(secs * 1000);
+      if(myToken !== plState.token) return;
+    }
+  } while(plLoopEl.checked && myToken === plState.token);
+  if(myToken === plState.token) stopSession();
+}
+
+plPlayBtn.addEventListener("click", () => {
+  if(plState.playing){ stopSession(); return; }
+  if(!playlist.length) return;
+  plState.playing = true;
+  plState.token++;
+  plPlayBtn.classList.add("on");
+  plPlayBtn.innerHTML = "&#9632;  Stop session";
+  if(plMusicEl.checked) startMusic();
+  runSession();
+});
+
+renderPl();
 
 window.addEventListener("load", () => {
   loadByName("Ipamorelin");
