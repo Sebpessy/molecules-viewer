@@ -26,6 +26,6 @@ export const prefersReduced = !!(window.matchMedia &&
 // Paste your project's values here (Project Settings → API). The anon key is
 // safe to expose in client code — row-level security protects the data.
 // Until both are set, the app runs in local-only mode (lists in localStorage).
-export const SUPABASE_URL = "";
-export const SUPABASE_ANON_KEY = "";
+export const SUPABASE_URL = "https://yyyhialxliqmbvkjbior.supabase.co";
+export const SUPABASE_ANON_KEY = "sb_publishable_IrQzfjxAAOCsPc4SVf98Uw_DON0TCIr";
 export const HAS_SUPABASE = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
