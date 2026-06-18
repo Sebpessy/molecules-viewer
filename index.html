@@ -302,6 +302,18 @@ header h1{
 }
 .pl-opt input[type="number"]:focus{border-color:var(--amber);}
 .pl-opt input[type="checkbox"]{accent-color:var(--amber);}
+.pl-opt select{
+  flex:1;
+  background:var(--bg);
+  border:1px solid var(--line);
+  color:var(--ink);
+  font-family:inherit;
+  font-size:12px;
+  padding:6px 8px;
+  border-radius:6px;
+  outline:none;
+}
+.pl-opt select:focus{border-color:var(--amber);}
 .pl-play{
   margin-top:4px;
   border-color:rgba(232,177,94,.45);
@@ -352,9 +364,12 @@ header h1{
         <label>Seconds each
           <input type="number" id="plDur" min="3" max="180" value="20">
         </label>
+        <label>Music track
+          <select id="plTrack"></select>
+        </label>
         <label><input type="checkbox" id="plVoice" checked> Gentle voice (announce name)</label>
-        <label><input type="checkbox" id="plMusic" checked> Ambient music</label>
-        <label><input type="checkbox" id="plLoop"> Loop session</label>
+        <label><input type="checkbox" id="plMusic" checked> Play music track</label>
+        <label><input type="checkbox" id="plLoop"> Repeat track when it ends</label>
       </div>
       <button class="ctl pl-play" id="plPlay">&#9654;  Play session</button>
     </div>
@@ -666,8 +681,16 @@ const plDurEl = document.getElementById("plDur");
 const plVoiceEl = document.getElementById("plVoice");
 const plMusicEl = document.getElementById("plMusic");
 const plLoopEl = document.getElementById("plLoop");
+const plTrackEl = document.getElementById("plTrack");
 const plPlayBtn = document.getElementById("plPlay");
 const plAddBtn = document.getElementById("plAdd");
+
+// Music tracks — add more entries here as new files are uploaded to audio/tracks/.
+const TRACKS = [
+  { name: "Molecules 1", file: "audio/tracks/molecules-1.mp3" }
+];
+plTrackEl.innerHTML = TRACKS.map((t,i) =>
+  '<option value="' + i + '">' + esc(t.name) + '</option>').join("");
 
 function renderPl(activeIdx){
   if(!playlist.length){
@@ -762,64 +785,40 @@ function speak(name){
   webSpeak(name);  // live PubChem specimens
 }
 
-// ---- ambient music (Web Audio, synthesized) ----
-let actx = null, musicNodes = null, musicMaster = null;
-const MUSIC_VOL = 0.13, MUSIC_DUCK = 0.045;
-function duckMusic(on){
-  if(!musicMaster || !actx) return;
-  try{ musicMaster.gain.setTargetAtTime(on ? MUSIC_DUCK : MUSIC_VOL, actx.currentTime, 0.35); }catch(e){}
+// ---- music track (uploaded audio file) ----
+const MUSIC_VOL = 0.6, MUSIC_DUCK = 0.2;
+let musicAudio = null;
+function fadeTo(audio, target, ms){
+  if(!audio) return;
+  const steps = 14, start = audio.volume, dt = Math.max(10, ms/steps);
+  let n = 0;
+  const id = setInterval(() => {
+    n++;
+    const v = start + (target - start) * (n/steps);
+    try{ audio.volume = Math.max(0, Math.min(1, v)); }catch(e){}
+    if(n >= steps || !musicAudio) clearInterval(id);
+  }, dt);
 }
-function startMusic(){
-  if(musicNodes) return;
-  if(!actx){
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if(!AC) return;
-    actx = new AC();
-  }
-  if(actx.state === "suspended") actx.resume();
-  const master = actx.createGain();
-  master.gain.value = 0;
-  master.gain.setTargetAtTime(MUSIC_VOL, actx.currentTime, 2.5);
-  musicMaster = master;
-  const lp = actx.createBiquadFilter();
-  lp.type = "lowpass";
-  lp.frequency.value = 650;
-  master.connect(lp);
-  lp.connect(actx.destination);
-  // a calm, open chord (C2-ish drone + fifth + octave + tenth)
-  const freqs = [65.41, 98.00, 130.81, 164.81, 196.00];
-  const nodes = [master];
-  freqs.forEach((f,i) => {
-    const o = actx.createOscillator();
-    o.type = "sine";
-    o.frequency.value = f;
-    o.detune.value = (i - 2) * 3;
-    const g = actx.createGain();
-    g.gain.value = 0.22;
-    // slow breathing tremolo, each voice slightly different
-    const lfo = actx.createOscillator();
-    lfo.type = "sine";
-    lfo.frequency.value = 0.05 + i * 0.018;
-    const lfoG = actx.createGain();
-    lfoG.gain.value = 0.1;
-    lfo.connect(lfoG);
-    lfoG.connect(g.gain);
-    o.connect(g);
-    g.connect(master);
-    o.start();
-    lfo.start();
-    nodes.push(o, lfo);
-  });
-  musicNodes = nodes;
+function duckMusic(on){
+  if(musicAudio) fadeTo(musicAudio, on ? MUSIC_DUCK : MUSIC_VOL, 350);
+}
+// onEnded fires only when the track plays through to its natural end (not when looping)
+function startMusic(onEnded){
+  stopMusic();
+  const t = TRACKS[parseInt(plTrackEl.value,10) || 0];
+  if(!t) return;
+  musicAudio = new Audio(t.file);
+  musicAudio.loop = plLoopEl.checked;   // repeat the whole track when requested
+  musicAudio.volume = MUSIC_VOL;
+  musicAudio.onended = () => {
+    if(musicAudio && !musicAudio.loop && onEnded) onEnded();
+  };
+  musicAudio.play().catch(() => {});
 }
 function stopMusic(){
-  if(!musicNodes) return;
-  const master = musicNodes[0];
-  try{ master.gain.setTargetAtTime(0, actx.currentTime, 0.8); }catch(e){}
-  const toStop = musicNodes.slice(1);
-  setTimeout(() => { toStop.forEach(n => { try{ n.stop(); }catch(e){} }); }, 1600);
-  musicNodes = null;
-  musicMaster = null;
+  if(!musicAudio) return;
+  try{ musicAudio.onended = null; musicAudio.pause(); }catch(e){}
+  musicAudio = null;
 }
 
 // ---- session runner ----
@@ -839,22 +838,27 @@ function stopSession(){
 
 async function runSession(){
   const myToken = plState.token;
+  const musicOn = plMusicEl.checked;
+  let i = 0;
+  // Molecules cycle in a loop; when music drives the session, the track's end
+  // stops everything (via stopSession), so specimens repeat as many times as needed.
   do {
-    for(let i=0; i<playlist.length; i++){
+    if(myToken !== plState.token) return;
+    const name = playlist[i % playlist.length];
+    renderPl(i % playlist.length);
+    loadByName(name);
+    if(plVoiceEl.checked){
+      await sleep(700);
       if(myToken !== plState.token) return;
-      const name = playlist[i];
-      renderPl(i);
-      loadByName(name);
-      if(plVoiceEl.checked){
-        await sleep(700);
-        if(myToken !== plState.token) return;
-        speak(name);
-      }
-      const secs = Math.max(3, parseInt(plDurEl.value,10) || 20);
-      await sleep(secs * 1000);
-      if(myToken !== plState.token) return;
+      speak(name);
     }
-  } while(plLoopEl.checked && myToken === plState.token);
+    const secs = Math.max(3, parseInt(plDurEl.value,10) || 20);
+    await sleep(secs * 1000);
+    if(myToken !== plState.token) return;
+    i++;
+    // With no music and no repeat, stop after one full pass through the playlist.
+    if(!musicOn && !plLoopEl.checked && i >= playlist.length) break;
+  } while(myToken === plState.token);
   if(myToken === plState.token) stopSession();
 }
 
@@ -865,7 +869,7 @@ plPlayBtn.addEventListener("click", () => {
   plState.token++;
   plPlayBtn.classList.add("on");
   plPlayBtn.innerHTML = "&#9632;  Stop session";
-  if(plMusicEl.checked) startMusic();
+  if(plMusicEl.checked) startMusic(() => stopSession());  // track end ends the session
   runSession();
 });
 
